@@ -36,6 +36,12 @@ export function createRequestHandler<Context = unknown>({
   };
 }
 
+class StaticFileNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
 export async function serveStaticFiles(
   request: Request,
   {
@@ -64,9 +70,18 @@ export async function serveStaticFiles(
     headers.set("Cache-Control", defaultCacheControl(url, assetsPublicPath));
   }
 
-  const file = await Deno.readFile(path.join(publicDir, url.pathname));
-
-  return new Response(file, { headers });
+  const filePath = path.join(publicDir, url.pathname);
+  try {
+    const file = await Deno.readFile(filePath);
+    return new Response(file, { headers });
+  } catch (error) {
+    if (error.code === "EISDIR" || error.code === "ENOENT") {
+      throw new StaticFileNotFoundError(
+        `No such file or directory: ${filePath}`,
+      );
+    }
+    throw error;
+  }
 }
 
 export function createRequestHandlerWithStaticFiles<Context = unknown>({
@@ -93,7 +108,7 @@ export function createRequestHandlerWithStaticFiles<Context = unknown>({
     try {
       return await serveStaticFiles(request, staticFiles);
     } catch (error) {
-      if (error.code !== "EISDIR" && error.code !== "ENOENT") {
+      if (!(error instanceof StaticFileNotFoundError)) {
         throw error;
       }
     }
